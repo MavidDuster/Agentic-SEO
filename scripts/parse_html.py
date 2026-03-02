@@ -137,13 +137,43 @@ def parse_html(html: str, base_url: Optional[str] = None) -> dict:
             else:
                 result["links"]["external"].append(link_data)
 
-    # Schema (JSON-LD)
+    # Schema (JSON-LD) — enhanced with type validation
+    DEPRECATED_SCHEMA = {
+        "HowTo", "SpecialAnnouncement", "CourseInfo", "EstimatedSalary",
+        "LearningVideo", "ClaimReview", "VehicleListing", "PracticeProblems",
+    }
+    RESTRICTED_SCHEMA = {"FAQPage"}  # government/healthcare only
+
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             schema_data = json.loads(script.string)
-            result["schema"].append(schema_data)
         except (json.JSONDecodeError, TypeError):
-            pass
+            result["schema"].append({
+                "error": "invalid_json",
+                "raw_snippet": (script.string or "")[:120],
+            })
+            continue
+
+        schema_type = schema_data.get("@type", "Unknown")
+        status = "active"
+        note = ""
+
+        if schema_type in DEPRECATED_SCHEMA:
+            status = "deprecated"
+            note = f"{schema_type} was deprecated/removed from rich results. Remove or replace."
+        elif schema_type in RESTRICTED_SCHEMA:
+            status = "restricted"
+            note = f"{schema_type} is restricted to government/healthcare authority sites only."
+
+        result["schema"].append({
+            "@type": schema_type,
+            "@context": schema_data.get("@context", ""),
+            "status": status,
+            "note": note,
+            "has_context": bool(schema_data.get("@context")),
+            "has_type": bool(schema_data.get("@type")),
+            "raw": schema_data,
+        })
 
     # Word count (visible text only)
     for element in soup(["script", "style", "nav", "footer", "header"]):
