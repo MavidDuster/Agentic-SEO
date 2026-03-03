@@ -172,7 +172,12 @@ The skill will auto-trigger when you mention SEO-related keywords in your IDE. T
 
 ### How Prompts Route to Agents & Scripts
 
-Different prompts invoke different specialist agents and scripts. Here's how the skill decides:
+The IDE uses an **LLM orchestration layer** to match your natural language intent to the correct underlying sub-skill (e.g., `seo-hreflang.md`, `seo-schema.md`). You do not need to use explicit flags or commands.
+
+- **To run a specific test:** Ask for it specifically (e.g., "Check hreflang"). The LLM will only trigger the necessary scripts.
+- **To force ALL agents/tests:** Ask for a "full, comprehensive audit running all checks". The LLM will route this to `seo-audit.md`, which acts as the master orchestrator calling all available scripts and analyzing the combined output.
+
+Here's how specific phrases map to the skill's capabilities:
 
 | You type... | Scope | Agent(s) activated | Scripts used |
 |-------------|-------|-------------------|--------------|
