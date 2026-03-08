@@ -36,6 +36,21 @@ def get_token(cli_token: str = None) -> str:
     return ""
 
 
+def gh_available() -> bool:
+    """Return True when GitHub CLI is available in PATH."""
+    try:
+        result = subprocess.run(
+            ["gh", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            text=True,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def normalize_repo_slug(value: str) -> str:
     """Normalize a repo identifier to owner/repo format."""
     if not value:
@@ -209,3 +224,125 @@ def graphql_json(query: str, variables: dict = None, token: str = "", timeout: i
     if payload.get("errors"):
         raise GitHubAPIError("GraphQL query failed", details={"errors": payload.get("errors")})
     return payload.get("data", {})
+
+
+def gh_api_json(
+    path: str,
+    method: str = "GET",
+    params: dict = None,
+    body: dict = None,
+    timeout: int = 25,
+) -> dict:
+    """
+    Call GitHub API through `gh api`.
+    Returns response payload dictionary.
+    """
+    if not gh_available():
+        raise GitHubAPIError("GitHub CLI (`gh`) is not available.")
+
+    endpoint = path
+    if endpoint.startswith(API_BASE):
+        endpoint = endpoint.replace(API_BASE, "", 1)
+    endpoint = endpoint.lstrip("/")
+
+    if params:
+        query = urllib.parse.urlencode(params, doseq=True)
+        sep = "&" if "?" in endpoint else "?"
+        endpoint = f"{endpoint}{sep}{query}"
+
+    cmd = ["gh", "api", endpoint, "--method", method.upper()]
+    input_data = None
+    if body is not None:
+        cmd += ["--input", "-"]
+        input_data = json.dumps(body)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            input=input_data,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitHubAPIError(f"gh api timed out after {timeout}s") from exc
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip() or "Unknown gh api failure"
+        raise GitHubAPIError(f"gh api error: {stderr}")
+
+    payload = (result.stdout or "").strip()
+    if not payload:
+        return {}
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise GitHubAPIError("gh api returned non-JSON output.") from exc
+
+
+def fetch_json(
+    path: str,
+    token: str = "",
+    method: str = "GET",
+    params: dict = None,
+    body: dict = None,
+    accept: str = "",
+    timeout: int = 20,
+    retries: int = 2,
+    provider: str = "auto",
+) -> dict:
+    """
+    Unified API accessor.
+
+    provider modes:
+    - api: use direct REST API only.
+    - gh: use gh api only.
+    - auto: try REST API first when token exists, then fallback to gh api.
+    """
+    mode = (provider or "auto").lower()
+    if mode not in ("auto", "api", "gh"):
+        raise GitHubAPIError(f"Invalid provider mode: {provider}")
+
+    if mode == "api":
+        return rest_json(
+            path=path,
+            token=token,
+            method=method,
+            params=params,
+            body=body,
+            accept=accept,
+            timeout=timeout,
+            retries=retries,
+        )
+
+    if mode == "gh":
+        data = gh_api_json(path=path, method=method, params=params, body=body, timeout=timeout)
+        return {"data": data, "status": 200, "rate_limit": {}}
+
+    # auto mode
+    api_error = None
+    if token:
+        try:
+            return rest_json(
+                path=path,
+                token=token,
+                method=method,
+                params=params,
+                body=body,
+                accept=accept,
+                timeout=timeout,
+                retries=retries,
+            )
+        except GitHubAPIError as exc:
+            api_error = exc
+
+    try:
+        data = gh_api_json(path=path, method=method, params=params, body=body, timeout=timeout)
+        return {"data": data, "status": 200, "rate_limit": {}}
+    except GitHubAPIError as gh_exc:
+        if api_error:
+            raise GitHubAPIError(
+                f"API and gh fallback both failed. API: {api_error}; GH: {gh_exc}"
+            ) from gh_exc
+        raise

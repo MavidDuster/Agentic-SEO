@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 
 from github_api import (
     GitHubAPIError,
+    fetch_json,
     get_token,
     resolve_repo,
-    rest_json,
 )
 
 
@@ -101,7 +101,7 @@ def score_findings(findings: list) -> dict:
     return {"score": score, "rating": rating, "critical": critical, "warning": warning}
 
 
-def build_audit(repo: str, token: str, cwd: str) -> dict:
+def build_audit(repo: str, token: str, cwd: str, provider: str) -> dict:
     report = {
         "timestamp_utc": utc_now_iso(),
         "repo": repo,
@@ -115,29 +115,33 @@ def build_audit(repo: str, token: str, cwd: str) -> dict:
 
     repo_data = {}
     community_data = {}
-    confidence = "Confirmed" if token else "Likely"
+    confidence = "Confirmed"
 
-    if token:
-        try:
-            repo_resp = rest_json(f"/repos/{repo}", token=token)
-            repo_data = repo_resp.get("data", {})
-            report["api_access"]["repo_endpoint_ok"] = True
-            report["api_access"]["rate_limit"] = repo_resp.get("rate_limit", {})
-        except GitHubAPIError as exc:
-            report["limitations"].append(
-                f"Repository API unavailable: {exc} (status: {exc.status or 'unknown'})"
-            )
+    if not token:
+        report["limitations"].append(
+            "No GitHub token found. Using public API and/or gh fallback where possible."
+        )
 
-        try:
-            comm_resp = rest_json(f"/repos/{repo}/community/profile", token=token)
-            community_data = comm_resp.get("data", {})
-            report["api_access"]["community_endpoint_ok"] = True
-        except GitHubAPIError as exc:
-            report["limitations"].append(
-                f"Community profile API unavailable: {exc} (status: {exc.status or 'unknown'})"
-            )
-    else:
-        report["limitations"].append("No GitHub token found. API-backed checks skipped.")
+    try:
+        repo_resp = fetch_json(f"/repos/{repo}", token=token, provider=provider)
+        repo_data = repo_resp.get("data", {})
+        report["api_access"]["repo_endpoint_ok"] = True
+        report["api_access"]["rate_limit"] = repo_resp.get("rate_limit", {})
+    except GitHubAPIError as exc:
+        confidence = "Likely"
+        report["limitations"].append(
+            f"Repository API unavailable: {exc} (status: {exc.status or 'unknown'})"
+        )
+
+    try:
+        comm_resp = fetch_json(f"/repos/{repo}/community/profile", token=token, provider=provider)
+        community_data = comm_resp.get("data", {})
+        report["api_access"]["community_endpoint_ok"] = True
+    except GitHubAPIError as exc:
+        confidence = "Likely"
+        report["limitations"].append(
+            f"Community profile API unavailable: {exc} (status: {exc.status or 'unknown'})"
+        )
 
     if repo_data:
         report["metadata"] = {
@@ -354,6 +358,12 @@ def main():
     parser.add_argument("--repo", help="Repository slug or URL (owner/repo). If omitted, infer from git origin.")
     parser.add_argument("--token", help="GitHub token override. Prefer env vars GITHUB_TOKEN or GH_TOKEN.")
     parser.add_argument("--cwd", default=".", help="Working directory for local file checks (default: .)")
+    parser.add_argument(
+        "--provider",
+        choices=["auto", "api", "gh"],
+        default="auto",
+        help="GitHub data provider mode (default: auto).",
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--output", help="Write JSON report to path.")
     args = parser.parse_args()
@@ -361,7 +371,7 @@ def main():
     try:
         repo = resolve_repo(args.repo, cwd=args.cwd)
         token = get_token(args.token)
-        report = build_audit(repo=repo, token=token, cwd=args.cwd)
+        report = build_audit(repo=repo, token=token, cwd=args.cwd, provider=args.provider)
     except GitHubAPIError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)

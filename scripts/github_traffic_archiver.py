@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 
 from github_api import (
     GitHubAPIError,
+    fetch_json,
     get_token,
     resolve_repo,
-    rest_json,
 )
 
 
@@ -42,26 +42,26 @@ def write_json(path: str, payload: dict):
         json.dump(payload, f, indent=2)
 
 
-def fetch_endpoint(path: str, token: str) -> dict:
+def fetch_endpoint(path: str, token: str, provider: str) -> dict:
     try:
-        response = rest_json(path, token=token)
+        response = fetch_json(path, token=token, provider=provider)
         return {"ok": True, "data": response.get("data", {}), "rate_limit": response.get("rate_limit", {})}
     except GitHubAPIError as exc:
         return {"ok": False, "error": str(exc), "status": exc.status, "details": exc.details}
 
 
-def collect_traffic(repo: str, token: str) -> dict:
+def collect_traffic(repo: str, token: str, provider: str) -> dict:
     base = f"/repos/{repo}/traffic"
     result = {
-        "views": fetch_endpoint(f"{base}/views", token),
-        "clones": fetch_endpoint(f"{base}/clones", token),
-        "referrers": fetch_endpoint(f"{base}/popular/referrers", token),
-        "paths": fetch_endpoint(f"{base}/popular/paths", token),
+        "views": fetch_endpoint(f"{base}/views", token, provider),
+        "clones": fetch_endpoint(f"{base}/clones", token, provider),
+        "referrers": fetch_endpoint(f"{base}/popular/referrers", token, provider),
+        "paths": fetch_endpoint(f"{base}/popular/paths", token, provider),
     }
     return result
 
 
-def build_snapshot(repo: str, token: str) -> dict:
+def build_snapshot(repo: str, token: str, provider: str) -> dict:
     snapshot = {
         "timestamp_utc": utc_now_iso(),
         "repo": repo,
@@ -70,10 +70,11 @@ def build_snapshot(repo: str, token: str) -> dict:
         "limitations": [],
     }
     if not token:
-        snapshot["limitations"].append("No GitHub token found. Traffic endpoints require authentication.")
-        return snapshot
+        snapshot["limitations"].append(
+            "No GitHub token found. Traffic endpoints may fail unless gh CLI auth is configured."
+        )
 
-    endpoint_data = collect_traffic(repo, token)
+    endpoint_data = collect_traffic(repo, token, provider)
     endpoint_summary = {}
 
     for key, payload in endpoint_data.items():
@@ -122,6 +123,12 @@ def main():
     parser.add_argument("--repo", help="Repository slug or URL (owner/repo). If omitted, infer from git origin.")
     parser.add_argument("--token", help="GitHub token override. Prefer env vars GITHUB_TOKEN or GH_TOKEN.")
     parser.add_argument("--archive-dir", default=".github-seo-data", help="Archive directory (default: .github-seo-data)")
+    parser.add_argument(
+        "--provider",
+        choices=["auto", "api", "gh"],
+        default="auto",
+        help="GitHub data provider mode (default: auto).",
+    )
     parser.add_argument("--no-write", action="store_true", help="Do not write archive files.")
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--output", help="Write current snapshot JSON to file path.")
@@ -130,7 +137,7 @@ def main():
     try:
         repo = resolve_repo(args.repo)
         token = get_token(args.token)
-        snapshot = build_snapshot(repo, token)
+        snapshot = build_snapshot(repo, token, provider=args.provider)
     except GitHubAPIError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
