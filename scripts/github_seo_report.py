@@ -103,6 +103,89 @@ def collect_findings(outputs: dict) -> list:
     return findings
 
 
+def build_backlink_plan(outputs: dict) -> dict:
+    """Create a practical backlink and promotion plan for the repository."""
+    repo_audit = outputs.get("repo_audit", {})
+    metadata = {}
+    title_analysis = {}
+    if repo_audit.get("ok"):
+        metadata = repo_audit.get("data", {}).get("metadata", {}) or {}
+        title_analysis = repo_audit.get("data", {}).get("title_analysis", {}) or {}
+
+    keywords = title_analysis.get("search_intent_keywords", [])[:6]
+    base_title = title_analysis.get("recommended_display_title") or metadata.get("name") or "Repository"
+    repo_url = metadata.get("html_url")
+    if not repo_url:
+        repo_slug = metadata.get("full_name")
+        if repo_slug:
+            repo_url = f"https://github.com/{repo_slug}"
+
+    title_ideas = [
+        f"How I Built {base_title} for SEO Automation",
+        f"GitHub SEO Playbook: Improving Discoverability for {base_title}",
+        f"{base_title}: From Idea to Open-Source SEO Workflow",
+    ]
+    if keywords:
+        kw_phrase = ", ".join(keywords[:3])
+        title_ideas.append(f"Open-Source Guide: {kw_phrase} with {base_title}")
+
+    channels = [
+        {
+            "channel": "Medium",
+            "type": "Technical case study",
+            "cadence": "1 post per major release",
+            "cta": "Link to repo + install quickstart + release notes",
+        },
+        {
+            "channel": "Dev.to",
+            "type": "Tutorial / launch post",
+            "cadence": "1 launch post + update posts quarterly",
+            "cta": "Link to GitHub repo and usage examples",
+        },
+        {
+            "channel": "Hashnode",
+            "type": "Deep-dive engineering write-up",
+            "cadence": "Bi-monthly",
+            "cta": "Link to architecture docs and scripts",
+        },
+        {
+            "channel": "Personal/Company Blog",
+            "type": "Canonical long-form article",
+            "cadence": "Monthly",
+            "cta": "Link to repo, docs, and comparison pages",
+        },
+        {
+            "channel": "LinkedIn Article",
+            "type": "Problem/solution summary for practitioners",
+            "cadence": "Per release",
+            "cta": "Link to repo and demo outputs",
+        },
+        {
+            "channel": "Reddit (relevant subreddits)",
+            "type": "Show-and-tell with value-first context",
+            "cadence": "Selective (major feature drops)",
+            "cta": "Share repo only after explaining workflow and results",
+        },
+    ]
+
+    anchor_guidance = {
+        "exact_match_max_percent": 10,
+        "recommended_mix": [
+            "Brand anchors (repo/owner name)",
+            "Partial-match anchors (e.g., 'agentic SEO skill')",
+            "Generic anchors ('GitHub repo', 'source code')",
+            "Naked URL anchors",
+        ],
+    }
+
+    return {
+        "repo_url": repo_url,
+        "title_ideas": title_ideas[:4],
+        "channels": channels,
+        "anchor_text_guidance": anchor_guidance,
+    }
+
+
 def build_markdown(report: dict) -> str:
     lines = []
     lines.append("# GitHub SEO Report")
@@ -187,6 +270,49 @@ def build_markdown(report: dict) -> str:
             lines.append(f"- Latest snapshot: `{archive_paths.get('latest_snapshot')}`")
         lines.append("")
 
+    title_analysis = report.get("title_analysis", {})
+    if title_analysis:
+        lines.append("## Title Optimization")
+        lines.append("")
+        lines.append(f"- Current name: `{title_analysis.get('current_name')}`")
+        lines.append(f"- Recommended slug: `{title_analysis.get('recommended_repo_slug')}`")
+        lines.append(f"- Recommended title: `{title_analysis.get('recommended_display_title')}`")
+        keywords = title_analysis.get("search_intent_keywords", [])
+        if keywords:
+            lines.append(f"- Intent keywords: `{', '.join(keywords)}`")
+        lines.append("")
+
+    backlink_plan = report.get("backlink_plan", {})
+    if backlink_plan:
+        lines.append("## Backlink Distribution Plan")
+        lines.append("")
+        if backlink_plan.get("repo_url"):
+            lines.append(f"- Target repo URL: `{backlink_plan.get('repo_url')}`")
+        lines.append("")
+        lines.append("### Suggested Post Titles")
+        lines.append("")
+        for title in backlink_plan.get("title_ideas", []):
+            lines.append(f"- {title}")
+        lines.append("")
+        lines.append("### Channels")
+        lines.append("")
+        lines.append("| Channel | Content Type | Cadence | CTA |")
+        lines.append("|---------|--------------|---------|-----|")
+        for item in backlink_plan.get("channels", []):
+            lines.append(
+                f"| {item['channel']} | {item['type']} | {item['cadence']} | {item['cta']} |"
+            )
+        lines.append("")
+        anchor = backlink_plan.get("anchor_text_guidance", {})
+        lines.append("### Anchor Guidance")
+        lines.append("")
+        lines.append(
+            f"- Exact-match anchor cap: `{anchor.get('exact_match_max_percent', 10)}%`"
+        )
+        for mix in anchor.get("recommended_mix", []):
+            lines.append(f"- {mix}")
+        lines.append("")
+
     return "\n".join(lines).strip() + "\n"
 
 
@@ -245,6 +371,8 @@ def main():
     }
     report["scores"] = extract_score(outputs)
     report["findings"] = collect_findings(outputs)
+    report["title_analysis"] = outputs.get("repo_audit", {}).get("data", {}).get("title_analysis", {})
+    report["backlink_plan"] = build_backlink_plan(outputs)
     report["markdown_path"] = args.markdown
 
     markdown = build_markdown(report)
