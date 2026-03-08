@@ -71,9 +71,9 @@ python3 github_search_benchmark.py --repo <owner/repo> --query "<llm_or_web_quer
 python3 github_competitor_research.py --repo <owner/repo> --query "<llm_or_web_query>" --provider auto --top-n 6 --json
 python3 github_competitor_research.py --repo <owner/repo> --competitor <owner/repo> --competitor <owner/repo> --provider auto --json
 python3 github_traffic_archiver.py --repo <owner/repo> --provider auto --json
-python3 github_seo_report.py --repo <owner/repo> --provider auto --markdown GITHUB-SEO-REPORT.md
+python3 github_seo_report.py --repo <owner/repo> --provider auto --markdown GITHUB-SEO-REPORT.md --action-plan GITHUB-ACTION-PLAN.md
 # Optional: cap auto-derived query count used by github_seo_report.py
-# python3 github_seo_report.py --repo <owner/repo> --provider auto --auto-query-max 8 --markdown GITHUB-SEO-REPORT.md
+# python3 github_seo_report.py --repo <owner/repo> --provider auto --auto-query-max 8 --markdown GITHUB-SEO-REPORT.md --action-plan GITHUB-ACTION-PLAN.md
 # Optional explicit verifier step for custom pipelines:
 # python3 finding_verifier.py --findings-json raw-findings.json --json
 ```

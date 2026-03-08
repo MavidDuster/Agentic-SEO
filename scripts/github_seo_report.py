@@ -563,6 +563,124 @@ def build_markdown(report: dict) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _priority_for_severity(severity: str) -> str:
+    if severity == "Critical":
+        return "P0"
+    if severity == "Warning":
+        return "P1"
+    if severity == "Info":
+        return "P2"
+    return "P3"
+
+
+def build_action_plan_markdown(report: dict) -> str:
+    lines = []
+    lines.append("# GitHub Action Plan")
+    lines.append("")
+    lines.append(f"- Repository: `{report.get('repo')}`")
+    lines.append(f"- Generated (UTC): `{report.get('timestamp_utc')}`")
+    lines.append(f"- Source report: `{report.get('markdown_path', 'GITHUB-SEO-REPORT.md')}`")
+    lines.append(f"- Overall score: `{report.get('scores', {}).get('overall')}`")
+    verification = report.get("verification", {}) or {}
+    lines.append(f"- Verified findings: `{verification.get('verified_count', len(report.get('findings', [])))}`")
+    lines.append("")
+
+    actionable = []
+    for finding in report.get("findings", []):
+        sev = finding.get("severity", "Info")
+        if sev in ("Pass",):
+            continue
+        fix = (finding.get("fix") or "").strip()
+        if not fix:
+            continue
+        actionable.append(
+            {
+                "priority": _priority_for_severity(sev),
+                "severity": sev,
+                "source": finding.get("source") or ", ".join(finding.get("sources") or []),
+                "finding": finding.get("finding", ""),
+                "evidence": finding.get("evidence", ""),
+                "fix": fix,
+            }
+        )
+
+    severity_order = {"Critical": 0, "Warning": 1, "Info": 2, "Pass": 3}
+    actionable.sort(key=lambda x: (severity_order.get(x["severity"], 9), x["finding"]))
+
+    now_items = [x for x in actionable if x["severity"] in ("Critical", "Warning")]
+    next_items = [x for x in actionable if x["severity"] == "Info"]
+
+    lines.append("## Now (0-7 Days)")
+    lines.append("")
+    lines.append("| Priority | Task | Evidence | Owner |")
+    lines.append("|----------|------|----------|-------|")
+    if now_items:
+        for item in now_items[:20]:
+            task = item["fix"].replace("|", "/")
+            evidence = item["evidence"].replace("|", "/")
+            lines.append(f"| {item['priority']} | {task} | {evidence} | Repo maintainer |")
+    else:
+        lines.append("| P2 | Maintain current baseline and monitor weekly. | No critical/warning issues in current run. | Repo maintainer |")
+    lines.append("")
+
+    lines.append("## Next (1-4 Weeks)")
+    lines.append("")
+    lines.append("| Priority | Improvement | Source |")
+    lines.append("|----------|-------------|--------|")
+    if next_items:
+        for item in next_items[:15]:
+            improvement = item["fix"].replace("|", "/")
+            source = (item["source"] or "analysis").replace("|", "/")
+            lines.append(f"| {item['priority']} | {improvement} | {source} |")
+    else:
+        lines.append("| P3 | Continue incremental README/topic optimization and monitor competitor changes. | analysis |")
+    lines.append("")
+
+    competitor = report.get("outputs", {}).get("competitor_research", {})
+    if competitor.get("ok"):
+        comp_data = competitor.get("data", {}) or {}
+        gaps = (comp_data.get("gaps", {}) or {}).get("topic_gaps", [])[:8]
+        lines.append("## Competitor Moves")
+        lines.append("")
+        if gaps:
+            lines.append("Top topic opportunities to validate and adopt when relevant:")
+            for gap in gaps:
+                lines.append(
+                    f"- Evaluate topic `{gap.get('topic')}` (observed across {gap.get('covered_by_competitors')} competitors)."
+                )
+        else:
+            lines.append("- No high-confidence topic gaps detected in this sample.")
+        lines.append("")
+
+    backlink = report.get("backlink_plan", {}) or {}
+    channels = backlink.get("channels", [])[:5]
+    if channels:
+        lines.append("## Backlink Distribution")
+        lines.append("")
+        lines.append("| Channel | Cadence | Next Action |")
+        lines.append("|---------|---------|-------------|")
+        for ch in channels:
+            action = f"Publish/update a post and link to `{backlink.get('repo_url') or report.get('repo')}`"
+            lines.append(f"| {ch.get('channel')} | {ch.get('cadence')} | {action} |")
+        lines.append("")
+
+    lines.append("## Measurement Cadence")
+    lines.append("")
+    lines.append("1. Run `github_seo_report.py` weekly and track score/findings deltas.")
+    lines.append("2. Archive traffic snapshots at least every 7 days to avoid 14-day GitHub retention loss.")
+    lines.append("3. Re-run competitor benchmarking monthly or after major releases.")
+    lines.append("")
+
+    lines.append("## Completion Criteria")
+    lines.append("")
+    lines.append("- All `Critical` and `Warning` tasks in `Now` are resolved or explicitly deferred.")
+    lines.append("- Repository metadata and README reflect target intent terms and trust signals.")
+    lines.append("- Traffic history remains continuously archived.")
+    lines.append("")
+
+    return "\n".join(lines).strip() + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate consolidated GitHub SEO report from local script outputs.")
     parser.add_argument("--repo", help="Repository slug or URL (owner/repo). If omitted, infer from git origin.")
@@ -589,6 +707,11 @@ def main():
     parser.add_argument("--archive-dir", default=".github-seo-data", help="Traffic archive directory.")
     parser.add_argument("--no-archive-write", action="store_true", help="Do not write traffic archive files.")
     parser.add_argument("--markdown", default="GITHUB-SEO-REPORT.md", help="Output markdown path.")
+    parser.add_argument(
+        "--action-plan",
+        default="GITHUB-ACTION-PLAN.md",
+        help="Output markdown path for prioritized action plan (default: GITHUB-ACTION-PLAN.md).",
+    )
     parser.add_argument("--json", action="store_true", help="Output merged JSON.")
     parser.add_argument("--output", help="Write merged JSON to file path.")
     args = parser.parse_args()
@@ -682,10 +805,14 @@ def main():
     report["title_analysis"] = outputs.get("repo_audit", {}).get("data", {}).get("title_analysis", {})
     report["backlink_plan"] = build_backlink_plan(outputs)
     report["markdown_path"] = args.markdown
+    report["action_plan_path"] = args.action_plan
 
     markdown = build_markdown(report)
     with open(args.markdown, "w", encoding="utf-8") as f:
         f.write(markdown)
+    action_plan_markdown = build_action_plan_markdown(report)
+    with open(args.action_plan, "w", encoding="utf-8") as f:
+        f.write(action_plan_markdown)
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
@@ -695,6 +822,7 @@ def main():
         print(json.dumps(report, indent=2))
     else:
         print(f"Generated markdown report: {args.markdown}")
+        print(f"Generated action plan: {args.action_plan}")
         if limitations:
             print("Limitations:")
             for item in limitations[:10]:

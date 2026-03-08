@@ -146,9 +146,9 @@ python3 <SKILL_DIR>/scripts/github_search_benchmark.py --repo <owner/repo> --que
 python3 <SKILL_DIR>/scripts/github_competitor_research.py --repo <owner/repo> --query "<llm_or_web_query>" --provider auto --top-n 6 --json
 python3 <SKILL_DIR>/scripts/github_competitor_research.py --repo <owner/repo> --competitor <owner/repo> --competitor <owner/repo> --provider auto --json
 python3 <SKILL_DIR>/scripts/github_traffic_archiver.py --repo <owner/repo> --provider auto --archive-dir .github-seo-data --json
-python3 <SKILL_DIR>/scripts/github_seo_report.py --repo <owner/repo> --provider auto --markdown GITHUB-SEO-REPORT.md --json
+python3 <SKILL_DIR>/scripts/github_seo_report.py --repo <owner/repo> --provider auto --markdown GITHUB-SEO-REPORT.md --action-plan GITHUB-ACTION-PLAN.md --json
 # Optional: increase/reduce auto-derived query volume (default: 6)
-# python3 <SKILL_DIR>/scripts/github_seo_report.py --repo <owner/repo> --provider auto --auto-query-max 8 --markdown GITHUB-SEO-REPORT.md --json
+# python3 <SKILL_DIR>/scripts/github_seo_report.py --repo <owner/repo> --provider auto --auto-query-max 8 --markdown GITHUB-SEO-REPORT.md --action-plan GITHUB-ACTION-PLAN.md --json
 ```
 
 If a check fails due network, DNS, permissions, or API rate limits:

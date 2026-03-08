@@ -430,9 +430,9 @@ python3 scripts/github_competitor_research.py --repo owner/repo --query "<llm_or
 python3 scripts/github_competitor_research.py --repo owner/repo --competitor owner/repo --competitor owner/repo --provider auto --json
 python3 scripts/github_traffic_archiver.py --repo owner/repo --provider auto --archive-dir .github-seo-data --json
 # github_seo_report.py auto-derives repo-specific benchmark queries if none are provided
-python3 scripts/github_seo_report.py --repo owner/repo --provider auto --markdown GITHUB-SEO-REPORT.md --json
+python3 scripts/github_seo_report.py --repo owner/repo --provider auto --markdown GITHUB-SEO-REPORT.md --action-plan GITHUB-ACTION-PLAN.md --json
 # Optional: tune auto-derived query count (default: 6)
-# python3 scripts/github_seo_report.py --repo owner/repo --provider auto --auto-query-max 8 --markdown GITHUB-SEO-REPORT.md --json
+# python3 scripts/github_seo_report.py --repo owner/repo --provider auto --auto-query-max 8 --markdown GITHUB-SEO-REPORT.md --action-plan GITHUB-ACTION-PLAN.md --json
 
 # Generic verifier stage (can be used by any workflow before final reporting)
 python3 scripts/finding_verifier.py --findings-json raw-findings.json --json
