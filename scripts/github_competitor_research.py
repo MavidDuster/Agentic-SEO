@@ -19,19 +19,22 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 
-from github_api import GitHubAPIError, auth_context, fetch_json, get_token, resolve_repo
-
-
-DEFAULT_QUERIES = [
-    "seo skill",
-    "agentic seo",
-    "technical seo audit",
-    "github seo",
-]
+from github_api import GitHubAPIError, auth_context, fetch_json, get_token, normalize_repo_slug, resolve_repo
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _dedupe(values: list) -> list:
+    out = []
+    seen = set()
+    for item in values:
+        key = item.lower().strip()
+        if key and key not in seen:
+            out.append(item.strip())
+            seen.add(key)
+    return out
 
 
 def load_queries(args) -> list:
@@ -46,16 +49,7 @@ def load_queries(args) -> list:
                 text = line.strip()
                 if text and not text.startswith("#"):
                     queries.append(text)
-    if not queries:
-        queries = DEFAULT_QUERIES[:]
-    deduped = []
-    seen = set()
-    for q in queries:
-        key = q.lower()
-        if key not in seen:
-            deduped.append(q)
-            seen.add(key)
-    return deduped
+    return _dedupe(queries)
 
 
 def parse_iso8601(value: str):
@@ -286,6 +280,7 @@ def build_report(
     token: str,
     provider: str,
     queries: list,
+    competitors: list,
     per_page: int,
     max_pages: int,
     top_n: int,
@@ -318,28 +313,47 @@ def build_report(
                 "No GitHub token found and gh CLI is unavailable. Competitor research may be rate-limited; set GITHUB_TOKEN/GH_TOKEN."
             )
 
-    query_run_full = []
-    for query in queries:
-        run = run_query_candidates(
-            repo=repo,
-            query=query,
-            token=token,
-            provider=provider,
-            per_page=per_page,
-            max_pages=max_pages,
+    ranked = []
+    if competitors:
+        for slug in competitors:
+            if slug.lower() == repo.lower():
+                continue
+            ranked.append(
+                {
+                    "full_name": slug,
+                    "seen_in_queries": 0,
+                    "best_rank": None,
+                    "query_ranks": {},
+                    "sample_item": {"description": "", "topics": [], "stargazers_count": 0, "html_url": f"https://github.com/{slug}"},
+                }
+            )
+        ranked = ranked[:top_n]
+    elif queries:
+        query_run_full = []
+        for query in queries:
+            run = run_query_candidates(
+                repo=repo,
+                query=query,
+                token=token,
+                provider=provider,
+                per_page=per_page,
+                max_pages=max_pages,
+            )
+            query_run_full.append(run)
+            report["query_runs"].append({
+                "query": run["query"],
+                "sampled_results": run["sampled_results"],
+                "total_count": run["total_count"],
+                "errors": run["errors"],
+            })
+            for err in run.get("errors", []):
+                report["limitations"].append(f"{query}: {err}")
+        aggregate = aggregate_candidates(query_run_full)
+        ranked = sorted(aggregate.values(), key=score_competitor)[:top_n]
+    else:
+        report["limitations"].append(
+            "No competitor inputs provided. Supply `--query/--query-file` from LLM/web search or pass explicit `--competitor` repo slugs."
         )
-        query_run_full.append(run)
-        report["query_runs"].append({
-            "query": run["query"],
-            "sampled_results": run["sampled_results"],
-            "total_count": run["total_count"],
-            "errors": run["errors"],
-        })
-        for err in run.get("errors", []):
-            report["limitations"].append(f"{query}: {err}")
-    aggregate = aggregate_candidates(query_run_full)
-
-    ranked = sorted(aggregate.values(), key=score_competitor)[:top_n]
 
     target_repo_data = fetch_repo_metadata(repo=repo, token=token, provider=provider)
     competitor_details = []
@@ -409,6 +423,7 @@ def main():
     parser.add_argument("--token", help="GitHub token override. Prefer env vars GITHUB_TOKEN or GH_TOKEN.")
     parser.add_argument("--query", action="append", help="Search query (repeatable).")
     parser.add_argument("--query-file", help="Path to newline-delimited query file.")
+    parser.add_argument("--competitor", action="append", help="Explicit competitor repo slug/URL (repeatable).")
     parser.add_argument("--per-page", type=int, default=30, help="Results per page (default: 30, max: 100).")
     parser.add_argument("--max-pages", type=int, default=2, help="Max search pages per query (default: 2).")
     parser.add_argument("--top-n", type=int, default=6, help="Number of competitor repos to analyze deeply (default: 6).")
@@ -430,11 +445,20 @@ def main():
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
 
+    competitors = []
+    if args.competitor:
+        for raw in args.competitor:
+            slug = normalize_repo_slug(raw)
+            if slug:
+                competitors.append(slug)
+    competitors = _dedupe(competitors)
+
     report = build_report(
         repo=repo,
         token=token,
         provider=args.provider,
         queries=queries,
+        competitors=competitors,
         per_page=max(1, min(100, args.per_page)),
         max_pages=max(1, args.max_pages),
         top_n=max(1, min(25, args.top_n)),

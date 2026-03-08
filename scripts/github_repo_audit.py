@@ -23,6 +23,7 @@ from github_api import (
     auth_context,
     fetch_json,
     get_token,
+    infer_repo_from_git,
     resolve_repo,
 )
 
@@ -153,14 +154,6 @@ def analyze_title_strategy(repo_slug: str, metadata: dict) -> dict:
     priority_seed = name_tokens + topic_tokens + desc_priority
     keywords = _dedupe_keep_order(priority_seed)
 
-    for must_have in ("seo", "github", "skill"):
-        if must_have in keywords:
-            continue
-        if must_have == "github" and "repo" in keywords:
-            continue
-        if must_have in topic_tokens or must_have in name_tokens or must_have in desc_tokens:
-            keywords.insert(0, must_have)
-
     if not keywords:
         keywords = _tokenize(repo_slug.replace("/", " "))
 
@@ -175,17 +168,12 @@ def analyze_title_strategy(repo_slug: str, metadata: dict) -> dict:
         if token in ("for", "and", "the"):
             continue
         title_tokens.append(token)
-    if "toolkit" not in title_tokens and "skill" in title_tokens:
-        title_tokens.append("toolkit")
     title_tokens = _dedupe_keep_order(title_tokens)
     display_title = " ".join(_format_title_token(t) for t in title_tokens[:7]).strip()
 
     alt_titles = []
     if display_title:
         alt_titles.append(display_title)
-    if "seo" in keywords:
-        alt_titles.append("GitHub SEO Repository Audit Toolkit")
-        alt_titles.append("Agentic SEO Skill for GitHub, Claude, and Codex")
     alt_titles = _dedupe_keep_order([t for t in alt_titles if t])
 
     return {
@@ -206,16 +194,19 @@ def analyze_title_strategy(repo_slug: str, metadata: dict) -> dict:
 
 def build_audit(repo: str, token: str, cwd: str, provider: str) -> dict:
     ctx = auth_context(token=token)
+    local_repo = infer_repo_from_git(cwd=cwd)
+    local_checks_enabled = bool(local_repo) and (local_repo.lower() == repo.lower())
     report = {
         "timestamp_utc": utc_now_iso(),
         "repo": repo,
         "auth_context": ctx,
+        "local_repo_context": {"detected_local_repo": local_repo or "", "local_checks_enabled": local_checks_enabled},
         "api_access": {"token_present": bool(token), "repo_endpoint_ok": False, "community_endpoint_ok": False},
         "limitations": [],
         "metadata": {},
         "title_analysis": {},
         "community_profile": {},
-        "local_signals": local_file_signals(cwd),
+        "local_signals": local_file_signals(cwd) if local_checks_enabled else {},
         "findings": [],
     }
 
@@ -236,6 +227,10 @@ def build_audit(repo: str, token: str, cwd: str, provider: str) -> dict:
             report["limitations"].append(
                 "No GitHub token found and gh CLI is unavailable. Set GITHUB_TOKEN/GH_TOKEN for reliable API access."
             )
+    if not local_checks_enabled:
+        report["limitations"].append(
+            "Local filesystem checks skipped because target repo does not match current working repository."
+        )
 
     try:
         repo_resp = fetch_json(f"/repos/{repo}", token=token, provider=provider)
@@ -459,30 +454,31 @@ def build_audit(repo: str, token: str, cwd: str, provider: str) -> dict:
                 )
 
     # Local fallback checks
-    local = report["local_signals"]
-    for required in ("README.md", "LICENSE"):
-        if not local.get(required):
-            add_finding(
-                findings,
-                "Community",
-                "Critical",
-                "Confirmed",
-                f"Missing required repository file: {required}.",
-                f"Local file check indicates `{required}` is absent.",
-                f"Add `{required}` to restore baseline project trust and discoverability.",
-            )
+    if local_checks_enabled:
+        local = report["local_signals"]
+        for required in ("README.md", "LICENSE"):
+            if not local.get(required):
+                add_finding(
+                    findings,
+                    "Community",
+                    "Critical",
+                    "Confirmed",
+                    f"Missing required repository file: {required}.",
+                    f"Local file check indicates `{required}` is absent.",
+                    f"Add `{required}` to restore baseline project trust and discoverability.",
+                )
 
-    for recommended in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", ".github/ISSUE_TEMPLATE", ".github/PULL_REQUEST_TEMPLATE.md", "CITATION.cff"):
-        if not local.get(recommended):
-            add_finding(
-                findings,
-                "Community",
-                "Warning",
-                "Confirmed",
-                f"Missing recommended trust artifact: {recommended}.",
-                f"Local file check indicates `{recommended}` is absent.",
-                f"Add `{recommended}` to improve contribution readiness and credibility signals.",
-            )
+        for recommended in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", ".github/ISSUE_TEMPLATE", ".github/PULL_REQUEST_TEMPLATE.md", "CITATION.cff"):
+            if not local.get(recommended):
+                add_finding(
+                    findings,
+                    "Community",
+                    "Warning",
+                    "Confirmed",
+                    f"Missing recommended trust artifact: {recommended}.",
+                    f"Local file check indicates `{recommended}` is absent.",
+                    f"Add `{recommended}` to improve contribution readiness and credibility signals.",
+                )
 
     if not findings:
         add_finding(

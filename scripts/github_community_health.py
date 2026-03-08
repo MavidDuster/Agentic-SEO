@@ -19,6 +19,7 @@ from github_api import (
     auth_context,
     fetch_json,
     get_token,
+    infer_repo_from_git,
     resolve_repo,
 )
 
@@ -57,7 +58,9 @@ def add_finding(findings: list, severity: str, finding: str, evidence: str, fix:
 
 def evaluate(repo: str, token: str, provider: str, cwd: str) -> dict:
     ctx = auth_context(token=token)
-    local = local_artifacts(cwd)
+    local_repo = infer_repo_from_git(cwd=cwd)
+    local_checks_enabled = bool(local_repo) and (local_repo.lower() == repo.lower())
+    local = local_artifacts(cwd) if local_checks_enabled else {}
     findings = []
     limitations = []
     remote = {}
@@ -73,25 +76,30 @@ def evaluate(repo: str, token: str, provider: str, cwd: str) -> dict:
         "CITATION.cff",
     )
 
-    for file_name in required:
-        if not local.get(file_name):
-            add_finding(
-                findings,
-                "Critical",
-                f"Missing required repository artifact: {file_name}.",
-                f"Local check indicates `{file_name}` is absent.",
-                f"Add `{file_name}` to satisfy baseline community trust requirements.",
-            )
+    if local_checks_enabled:
+        for file_name in required:
+            if not local.get(file_name):
+                add_finding(
+                    findings,
+                    "Critical",
+                    f"Missing required repository artifact: {file_name}.",
+                    f"Local check indicates `{file_name}` is absent.",
+                    f"Add `{file_name}` to satisfy baseline community trust requirements.",
+                )
 
-    for file_name in recommended:
-        if not local.get(file_name):
-            add_finding(
-                findings,
-                "Warning",
-                f"Missing recommended community artifact: {file_name}.",
-                f"Local check indicates `{file_name}` is absent.",
-                f"Add `{file_name}` to improve contribution readiness and trust signals.",
-            )
+        for file_name in recommended:
+            if not local.get(file_name):
+                add_finding(
+                    findings,
+                    "Warning",
+                    f"Missing recommended community artifact: {file_name}.",
+                    f"Local check indicates `{file_name}` is absent.",
+                    f"Add `{file_name}` to improve contribution readiness and trust signals.",
+                )
+    else:
+        limitations.append(
+            "Local filesystem checks skipped because target repo does not match current working repository."
+        )
 
     if not token:
         if ctx.get("gh_authenticated"):
@@ -134,12 +142,13 @@ def evaluate(repo: str, token: str, provider: str, cwd: str) -> dict:
                 )
 
     total_checks = len(required) + len(recommended)
-    passed_checks = sum(1 for key in required + recommended if local.get(key))
-    local_completion = round((passed_checks / total_checks) * 100, 2)
+    passed_checks = sum(1 for key in required + recommended if local.get(key)) if local_checks_enabled else 0
+    local_completion = round((passed_checks / total_checks) * 100, 2) if local_checks_enabled else None
 
     critical_count = sum(1 for f in findings if f["severity"] == "Critical")
     warning_count = sum(1 for f in findings if f["severity"] == "Warning")
-    score = max(0, int(local_completion - (critical_count * 20) - (warning_count * 5)))
+    base = local_completion if isinstance(local_completion, (int, float)) else 100
+    score = max(0, int(base - (critical_count * 20) - (warning_count * 5)))
 
     if not findings:
         add_finding(
@@ -155,6 +164,7 @@ def evaluate(repo: str, token: str, provider: str, cwd: str) -> dict:
         "repo": repo,
         "provider": provider,
         "auth_context": ctx,
+        "local_repo_context": {"detected_local_repo": local_repo or "", "local_checks_enabled": local_checks_enabled},
         "token_present": bool(token),
         "local_completion_percent": local_completion,
         "score": score,

@@ -24,16 +24,19 @@ from github_api import (
 )
 
 
-DEFAULT_QUERIES = [
-    "seo skill",
-    "agentic seo",
-    "technical seo audit",
-    "llm seo",
-]
-
-
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _dedupe(values: list) -> list:
+    out = []
+    seen = set()
+    for item in values:
+        key = item.lower().strip()
+        if key and key not in seen:
+            out.append(item.strip())
+            seen.add(key)
+    return out
 
 
 def load_queries(args) -> list:
@@ -48,16 +51,7 @@ def load_queries(args) -> list:
                 text = line.strip()
                 if text and not text.startswith("#"):
                     queries.append(text)
-    if not queries:
-        queries = DEFAULT_QUERIES[:]
-    # De-duplicate while preserving order
-    deduped = []
-    seen = set()
-    for q in queries:
-        if q.lower() not in seen:
-            deduped.append(q)
-            seen.add(q.lower())
-    return deduped
+    return _dedupe(queries)
 
 
 def run_query(repo: str, query: str, token: str, per_page: int, max_pages: int, provider: str) -> dict:
@@ -206,18 +200,23 @@ def main():
                 "No GitHub token found and gh CLI is unavailable. Search may be rate-limited; set GITHUB_TOKEN/GH_TOKEN."
             )
 
-    for query in queries:
-        result = run_query(
-            repo=repo,
-            query=query,
-            token=token,
-            per_page=per_page,
-            max_pages=max_pages,
-            provider=args.provider,
+    if not queries:
+        report["limitations"].append(
+            "No queries provided. Supply `--query` or `--query-file` using LLM/web-search-derived intent keywords."
         )
-        if result.get("errors"):
-            report["limitations"].extend([f"{query}: {err}" for err in result["errors"]])
-        report["results"].append(result)
+    else:
+        for query in queries:
+            result = run_query(
+                repo=repo,
+                query=query,
+                token=token,
+                per_page=per_page,
+                max_pages=max_pages,
+                provider=args.provider,
+            )
+            if result.get("errors"):
+                report["limitations"].extend([f"{query}: {err}" for err in result["errors"]])
+            report["results"].append(result)
 
     report["summary"] = summarize(report["results"])
 
