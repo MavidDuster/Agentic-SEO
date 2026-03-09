@@ -105,12 +105,12 @@ copy_skill() {
 
   if command -v rsync >/dev/null 2>&1; then
     rsync -a \
-      --exclude "/.git/" \
-      --exclude "/.github/" \
-      --exclude "/docs/" \
-      --exclude "/.gitignore" \
-      --exclude "/README*" \
-      --exclude "/LICENSE*" \
+      --exclude ".git/" \
+      --exclude ".github/" \
+      --exclude "docs/" \
+      --exclude ".gitignore" \
+      --exclude "README*" \
+      --exclude "LICENSE*" \
       --exclude "__pycache__/" \
       --exclude "*.pyc" \
       --exclude "smoke-screenshots-hackingdream/" \
@@ -120,12 +120,15 @@ copy_skill() {
     (
       cd "${src}"
       tar \
-        --exclude="./.git" \
-        --exclude="./.github" \
-        --exclude="./docs" \
-        --exclude="./.gitignore" \
-        --exclude="./README*" \
-        --exclude="./LICENSE*" \
+        --exclude=".git" \
+        --exclude=".git/*" \
+        --exclude=".github" \
+        --exclude=".github/*" \
+        --exclude="docs" \
+        --exclude="docs/*" \
+        --exclude=".gitignore" \
+        --exclude="README*" \
+        --exclude="LICENSE*" \
         --exclude="__pycache__" \
         --exclude="*.pyc" \
         --exclude="smoke-screenshots-hackingdream" \

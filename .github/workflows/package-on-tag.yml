@@ -28,11 +28,14 @@ jobs:
         run: |
           mkdir -p dist
           zip -r "dist/${PKG_NAME}.zip" . \
-            -x ".git/*" \
-            -x "__pycache__/*" \
-            -x "scripts/__pycache__/*" \
+            -x ".git" ".git/*" ".git/**" \
+            -x ".github" ".github/*" ".github/**" \
+            -x "__pycache__/*" "scripts/__pycache__/*" \
             -x "*.pyc" \
-            -x "smoke-screenshots-hackingdream/*" \
+            -x "LICENSE" "LICENSE.*" \
+            -x "README*" \
+            -x "docs" "docs/*" "docs/**" \
+            -x ".gitignore*" \
             -x "seo-report-*.html"
 
       - name: Upload workflow artifact
