@@ -164,6 +164,7 @@ function Is-Excluded {
     if ($rel -eq '.gitignore') { return $true }
     if ($rel -like 'README*') { return $true }
     if ($rel -like 'LICENSE*') { return $true }
+    if ($segments.Count -eq 1 -and $rel -like 'install.*') { return $true }
     if ($name -like '*.pyc') { return $true }
     if ($name -like 'seo-report-*.html') { return $true }
 

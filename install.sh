@@ -111,6 +111,7 @@ copy_skill() {
       --exclude ".gitignore" \
       --exclude "README*" \
       --exclude "LICENSE*" \
+      --exclude "install.*" \
       --exclude "__pycache__/" \
       --exclude "*.pyc" \
       --exclude "smoke-screenshots-hackingdream/" \
@@ -129,6 +130,7 @@ copy_skill() {
         --exclude=".gitignore" \
         --exclude="README*" \
         --exclude="LICENSE*" \
+        --exclude="install.*" \
         --exclude="__pycache__" \
         --exclude="*.pyc" \
         --exclude="smoke-screenshots-hackingdream" \
